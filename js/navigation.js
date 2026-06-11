@@ -145,9 +145,11 @@ const Navigation = (() => {
         q:     query,
         limit: '5',
         lang:  'es',
-        lat:   lat.toString(),
-        lon:   lng.toString(),
       });
+      if (lat && lng) {
+        params.set('lat', lat.toFixed(6));
+        params.set('lon', lng.toFixed(6));
+      }
 
       const url = `https://photon.komoot.io/api/?${params}`;
       const res = await fetch(url, {

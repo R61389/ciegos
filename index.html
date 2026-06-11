@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#000510">
+  <meta name="description" content="VozUrbana IA — Asistente de movilidad urbana para personas con discapacidad visual. IBC Bolivia.">
+
+  <!-- PWA manifest -->
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Estilos -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
+  <link rel="stylesheet" href="css/style.css">
+
+  <title>VozUrbana IA — IBC Bolivia</title>
+</head>
+<body>
+
+<!-- Accesibilidad: lector de pantalla -->
+<div class="sr-only" role="status" aria-live="assertive" id="ann"></div>
+
+<!-- ══════════════════════════════════════════
+     PANTALLA 1: IDLE — JARVIS en espera
+══════════════════════════════════════════ -->
+<div id="s-idle"
+  role="button" tabindex="0"
+  aria-label="VozUrbana. Toca la pantalla para iniciar tu asistente de navegación."
+  onclick="App.onTapIdle(event)"
+  onkeydown="if(event.key==='Enter'||event.key===' ')App.onTapIdle(event)">
+
+  <canvas id="bg-c" aria-hidden="true"></canvas>
+  <div class="scan" aria-hidden="true"></div>
+
+  <div class="rings" aria-hidden="true">
+    <div class="ring r1"></div><div class="ring r2"></div>
+    <div class="ring r3"></div><div class="ring r4"></div><div class="ring r5"></div>
+  </div>
+
+  <div class="hc-box" aria-hidden="true">
+    <div class="hc hc-tl"></div><div class="hc hc-tr"></div>
+    <div class="hc hc-bl"></div><div class="hc hc-br"></div>
+    <span class="hc-l ltl">IBC · Bolivia</span>
+    <span class="hc-l ltr">100% Gratuito</span>
+    <span class="hc-l lbl" id="lgps">GPS: buscando...</span>
+    <span class="hc-l lbr">En espera</span>
+  </div>
+
+  <div class="hud-l" aria-hidden="true">
+    <div class="hdb">
+      <span class="hdk">GPS</span>
+      <span class="hdv" id="dgps">...</span>
+      <div class="hdbar"><div class="hdf" id="fgps" style="width:10%"></div></div>
+    </div>
+    <div class="hdb">
+      <span class="hdk">IA</span>
+      <span class="hdv">Gemini ✓</span>
+      <div class="hdbar"><div class="hdf" style="width:100%"></div></div>
+    </div>
+    <div class="hdb">
+      <span class="hdk">Voz</span>
+      <span class="hdv">Web Speech</span>
+      <div class="hdbar"><div class="hdf" style="width:80%"></div></div>
+    </div>
+  </div>
+
+  <div class="hud-r" aria-hidden="true">
+    <div class="hdb" style="align-items:flex-end">
+      <span class="hdk">Hora</span>
+      <span class="hdv" id="dhora">--:--</span>
+    </div>
+    <div class="hdb" style="align-items:flex-end">
+      <span class="hdk">Red</span>
+      <span class="hdv" id="dnet">Online</span>
+      <div class="hdbar"><div class="hdf" id="fnet" style="width:96%"></div></div>
+    </div>
+  </div>
+
+  <div class="core">
+    <div class="rwrap">
+      <canvas id="rc" width="160" height="160" aria-hidden="true"></canvas>
+      <div class="rglow" aria-hidden="true"></div>
+    </div>
+    <h1 class="it">VozUrbana</h1>
+    <p class="is">Instituto Boliviano de la Ceguera</p>
+    <p class="ist" id="ist" role="status" aria-live="polite">Obteniendo ubicación...</p>
+    <p class="ih" aria-hidden="true">Toca en cualquier lugar para comenzar</p>
+  </div>
+
+</div>
+
+
+<!-- ══════════════════════════════════════════
+     PANTALLA 2: ASISTENTE PRINCIPAL
+══════════════════════════════════════════ -->
+<div id="s-main" class="off" role="main" aria-label="Asistente VozUrbana activo">
+
+  <!-- Mapa Leaflet -->
+  <div id="map" aria-label="Mapa de navegación"></div>
+
+  <!-- Fondo JARVIS -->
+  <div id="jbg" aria-hidden="true">
+    <canvas id="rc2" width="120" height="120"></canvas>
+  </div>
+
+  <!-- Header -->
+  <header class="hdr" aria-label="Estado del sistema">
+    <span class="hlogo">VOZURBANA</span>
+    <span class="hmid" id="hmid" role="status" aria-live="polite">Iniciando...</span>
+    <span class="hgps" id="hgps" aria-label="Precisión GPS">GPS ✓</span>
+  </header>
+
+  <!-- Instrucción de navegación -->
+  <div class="nvbox" id="nvbox" role="status" aria-live="assertive" aria-label="Instrucción de navegación">
+    <div class="nvinn">
+      <div class="nvaw" aria-hidden="true">
+        <div class="nvarr" id="nvarr">⬆</div>
+        <div class="nvring"></div>
+      </div>
+      <div class="nvtxt">
+        <div class="nvmain" id="nvmain">Calculando...</div>
+        <div class="nvsub"  id="nvsub"></div>
+      </div>
+      <div class="nvd" id="nvd" aria-label="Distancia">--</div>
+    </div>
+    <div class="nvprog"><div class="nvfill" id="nvfill"></div></div>
+  </div>
+
+  <!-- Confirmación de destino -->
+  <div class="cfbox" id="cfbox" role="dialog" aria-modal="true" aria-label="Confirmar destino">
+    <div class="cficon" aria-hidden="true">📍</div>
+    <div class="cftit">¿Es tu destino?</div>
+    <div class="cfplace" id="cfplace">...</div>
+    <div class="cfsub">
+      Di <strong style="color:var(--g)">«sí»</strong> para confirmar ·
+      <strong style="color:var(--red)">«no»</strong> para otro
+    </div>
+  </div>
+
+  <!-- Onda de voz -->
+  <div class="vwave" id="vwave" aria-hidden="true">
+    <div class="vb"></div><div class="vb"></div><div class="vb"></div>
+    <div class="vb"></div><div class="vb"></div><div class="vb"></div>
+    <div class="vb"></div><div class="vb"></div><div class="vb"></div>
+    <div class="vb"></div><div class="vb"></div>
+  </div>
+  <div class="vlbl" id="vlbl" aria-hidden="true">✦ Hablando...</div>
+
+  <!-- Burbujas -->
+  <div class="usrbbl" id="usrbbl" aria-hidden="true"></div>
+  <div class="aibbl"  id="aibbl"  aria-live="polite" aria-label="Respuesta del asistente"></div>
+
+  <!-- Typing dots -->
+  <div class="ftyp" id="ftyp" aria-label="El asistente está pensando" aria-hidden="true">
+    <div class="ftd"></div><div class="ftd"></div><div class="ftd"></div>
+  </div>
+
+  <!-- Wake word indicator -->
+  <div class="wkind" id="wkind" aria-live="polite">Di «hey asistente» para hablar</div>
+
+  <!-- HUD navegación -->
+  <div class="nvhud" id="nvhud" aria-label="Métricas de navegación">
+    <div class="nm2">
+      <span class="nm2v" id="mdist">--</span>
+      <span class="nm2l">Restante</span>
+    </div>
+    <div class="nm2">
+      <span class="nm2v" id="mtime">00:00</span>
+      <span class="nm2l">Tiempo</span>
+    </div>
+    <div class="nm2">
+      <span class="nm2v" id="meta">--</span>
+      <span class="nm2l">Llego en</span>
+    </div>
+  </div>
+
+  <!-- Barra de chat -->
+  <div class="chatbar" id="chatbar" aria-label="Chat con el asistente">
+    <div class="microw">
+      <div class="micdot act" id="micdot" aria-hidden="true"></div>
+      <span class="miclbl" id="miclbl" role="status" aria-live="polite">Escuchando...</span>
+    </div>
+    <div class="inprow">
+      <textarea
+        id="msginp"
+        rows="1"
+        placeholder="O escribe aquí..."
+        aria-label="Escribe un mensaje al asistente"
+      ></textarea>
+      <button id="btnsnd" aria-label="Enviar mensaje">➤</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       ESP32 + HC-SR04 MODULE
+  ══════════════════════════════════════════ -->
+
+  <!-- Toast de alerta (aparece en la parte superior) -->
+  <div id="esp-alert" class="esp-alert" role="alert" aria-live="assertive">
+    <span class="esp-alert-icon" aria-hidden="true"></span>
+    <span class="esp-alert-msg"></span>
+  </div>
+
+  <!-- Overlay del sensor sobre el mapa (durante navegación) -->
+  <div id="esp-map-overlay" class="esp-map-overlay" aria-label="Lectura sensor HC-SR04">
+    <div class="esp-map-overlay-inner">
+      <span class="esp-map-overlay-label">◉ HC-SR04</span>
+      <span id="esp-map-overlay-dist" class="esp-map-overlay-dist ok">-- cm</span>
+    </div>
+  </div>
+
+  <!-- FAB — botón flotante de acceso al panel -->
+  <button id="esp-fab" class="esp-fab" aria-label="Panel de sensor ESP32" data-alert="0">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10"/>
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M6.34 6.34a8 8 0 0 0 0 11.32M17.66 6.34a8 8 0 0 1 0 11.32"/>
+    </svg>
+    <span id="esp-fab-dot"   class="esp-fab-dot disc"       aria-hidden="true"></span>
+    <span id="esp-log-badge" class="esp-log-badge"
+          style="display:none" aria-hidden="true">0</span>
+  </button>
+
+  <!-- ══ PANEL PRINCIPAL ESP32 ══ -->
+  <div id="esp-panel" class="esp-panel" role="dialog" aria-modal="true"
+       aria-label="Panel de monitoreo ESP32 y sensor HC-SR04">
+
+    <!-- Drag handle visual -->
+    <div class="esp-handle" aria-hidden="true"></div>
+
+    <!-- Header del panel -->
+    <div class="esp-header">
+      <div class="esp-header-left">
+        <div class="esp-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/>
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M6.34 6.34a8 8 0 0 0 0 11.32M17.66 6.34a8 8 0 0 1 0 11.32"/>
+          </svg>
+          ESP32 · HC-SR04
+        </div>
+        <span id="esp-conn-badge" class="esp-conn-badge badge-disc" aria-live="polite">Desconectado</span>
+      </div>
+      <button id="esp-close" class="esp-close" aria-label="Cerrar panel del sensor">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M18 6 6 18M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Config de conexión WiFi -->
+    <div class="esp-config-row">
+      <div class="esp-config-field">
+        <svg class="esp-config-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <rect x="2" y="2" width="20" height="8" rx="2"/>
+          <rect x="2" y="14" width="20" height="8" rx="2"/>
+          <line x1="6" y1="6" x2="6.01" y2="6"/>
+          <line x1="6" y1="18" x2="6.01" y2="18"/>
+        </svg>
+        <input
+          id="esp-ip-input"
+          class="esp-ip-input"
+          type="text"
+          inputmode="url"
+          autocomplete="off"
+          placeholder="IP del ESP32  (ej: 192.168.1.100)"
+          aria-label="Dirección IP del ESP32 en la red WiFi local"
+        />
+      </div>
+      <button id="esp-connect-btn"    class="esp-connect-btn">Conectar</button>
+      <button id="esp-disconnect-btn" class="esp-disconnect-btn" title="Desconectar" aria-label="Desconectar ESP32">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="esp-tabs" role="tablist" aria-label="Secciones del panel ESP32">
+      <button class="esp-tab active" data-tab="monitor" role="tab" aria-selected="true"  aria-controls="esp-tab-monitor">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Monitor
+      </button>
+      <button class="esp-tab" data-tab="mapa" role="tab" aria-selected="false" aria-controls="esp-tab-mapa">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
+        Mapa + GPS
+      </button>
+      <button class="esp-tab" data-tab="registro" role="tab" aria-selected="false" aria-controls="esp-tab-registro">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        Registro
+      </button>
+    </div>
+
+    <!-- ─── TAB MONITOR ─── -->
+    <div id="esp-tab-monitor" class="esp-tab-content active" role="tabpanel" aria-labelledby="tab-monitor">
+
+      <!-- Gauge circular -->
+      <div class="esp-gauge-wrapper">
+        <div class="esp-gauge-container">
+          <svg class="esp-gauge-svg" viewBox="0 0 100 100" aria-hidden="true">
+            <circle class="esp-gauge-track" cx="50" cy="50" r="40"
+              stroke="rgba(0,200,255,0.08)" stroke-width="7" fill="none"
+              stroke-dasharray="251.33" stroke-dashoffset="0"
+              stroke-linecap="round" transform="rotate(-90 50 50)"/>
+            <circle id="esp-gauge-fill" cx="50" cy="50" r="40"
+              stroke="rgba(0,200,255,0.2)" stroke-width="7" fill="none"
+              stroke-dasharray="251.33" stroke-dashoffset="251.33"
+              stroke-linecap="round" transform="rotate(-90 50 50)"
+              style="transition: stroke-dashoffset 0.35s ease, stroke 0.35s ease;"/>
+          </svg>
+          <div class="esp-dist-display">
+            <span id="esp-dist-num" class="esp-dist-num" aria-live="polite">--</span>
+            <span class="esp-dist-unit">cm</span>
+          </div>
+        </div>
+        <div class="esp-gauge-scale" aria-hidden="true">
+          <span>0</span><span>100</span><span>200</span><span>300</span><span>400+</span>
+        </div>
+      </div>
+
+      <!-- Grid de estadísticas -->
+      <div class="esp-stats-grid">
+        <div class="esp-stat-card">
+          <svg class="esp-stat-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          <div class="esp-stat-info">
+            <span class="esp-stat-label">Estado sensor</span>
+            <span id="esp-sensor-state" class="esp-sensor-state" aria-live="polite">Sin datos</span>
+          </div>
+        </div>
+
+        <div class="esp-stat-card">
+          <svg class="esp-stat-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <div class="esp-stat-info">
+            <span class="esp-stat-label">Última lectura</span>
+            <span id="esp-last-time" class="esp-stat-value" aria-live="polite">--:--:--</span>
+          </div>
+        </div>
+
+        <div class="esp-stat-card">
+          <svg class="esp-stat-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+          <div class="esp-stat-info">
+            <span class="esp-stat-label">Eventos</span>
+            <span id="esp-events-count" class="esp-stat-value" aria-live="polite">0</span>
+          </div>
+        </div>
+
+        <div class="esp-stat-card">
+          <svg class="esp-stat-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/></svg>
+          <div class="esp-stat-info">
+            <span class="esp-stat-label">Protocolo</span>
+            <span id="esp-conn-type" class="esp-stat-value">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Leyenda -->
+      <div class="esp-legend" aria-label="Leyenda de colores por distancia">
+        <div class="esp-legend-item"><span class="esp-legend-dot ok"      aria-hidden="true"></span><span>&gt; 100 cm — Libre</span></div>
+        <div class="esp-legend-item"><span class="esp-legend-dot caution" aria-hidden="true"></span><span>50–100 cm — Aviso visual</span></div>
+        <div class="esp-legend-item"><span class="esp-legend-dot warn"    aria-hidden="true"></span><span>30–50 cm — Vibración</span></div>
+        <div class="esp-legend-item"><span class="esp-legend-dot crit"    aria-hidden="true"></span><span>&lt; 30 cm — Alarma + sonido</span></div>
+      </div>
+    </div>
+
+    <!-- ─── TAB MAPA + GPS ─── -->
+    <div id="esp-tab-mapa" class="esp-tab-content" role="tabpanel" aria-labelledby="tab-mapa">
+      <div class="esp-map-info-grid">
+
+        <div class="esp-info-card esp-info-card-wide">
+          <div class="esp-info-card-header">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            Posición GPS actual
+          </div>
+          <div id="esp-gps-coords" class="esp-info-card-value" aria-live="polite">Obteniendo GPS…</div>
+        </div>
+
+        <div class="esp-info-card">
+          <div class="esp-info-card-header">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><circle cx="12" cy="12" r="3"/></svg>
+            Distancia HC-SR04
+          </div>
+          <div id="esp-map-sensor-dist" class="esp-info-card-value ok" aria-live="polite">-- cm</div>
+        </div>
+
+        <!-- Indicador dual simultáneo GPS + Sensor -->
+        <div class="esp-dual-indicator">
+          <div class="esp-dual-item">
+            <div class="esp-dual-dot gps-dot" aria-hidden="true"></div>
+            <div>
+              <div class="esp-dual-label">GPS en tiempo real</div>
+              <div id="esp-dual-gps" class="esp-dual-value" aria-live="polite">Actualizando…</div>
+            </div>
+          </div>
+          <div class="esp-dual-sep" aria-hidden="true"></div>
+          <div class="esp-dual-item">
+            <div class="esp-dual-dot sensor-dot" aria-hidden="true"></div>
+            <div>
+              <div class="esp-dual-label">HC-SR04 en tiempo real</div>
+              <div id="esp-dual-sensor" class="esp-dual-value" aria-live="polite">-- cm</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="esp-info-card esp-info-card-wide">
+          <div class="esp-info-card-header">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Descripción
+          </div>
+          <div id="esp-map-desc" class="esp-info-card-desc-text" aria-live="polite">
+            Conecta el ESP32 para ver datos del sensor junto a tu GPS.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ─── TAB REGISTRO ─── -->
+    <div id="esp-tab-registro" class="esp-tab-content" role="tabpanel" aria-labelledby="tab-registro">
+      <div class="esp-log-header">
+        <span class="esp-log-title">Eventos registrados</span>
+        <button class="esp-log-clear-btn" id="esp-log-clear" aria-label="Limpiar registro de eventos">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          Limpiar
+        </button>
+      </div>
+      <div class="esp-log-cols" aria-hidden="true">
+        <span>Hora</span>
+        <span>Distancia</span>
+        <span>GPS</span>
+      </div>
+      <div id="esp-log-list" class="esp-log-list" role="list" aria-label="Lista de lecturas del sensor">
+        <div class="esp-log-empty">Sin registros aún.<br>Conecta el ESP32 para comenzar.</div>
+      </div>
+    </div>
+
+  </div><!-- /esp-panel -->
+
+</div><!-- /s-main -->
+
+
+<!-- ══════════════════════════════════════════
+     LIBRERÍAS EXTERNAS
+══════════════════════════════════════════ -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+<!-- Motion One (animaciones fluidas) -->
+<script src="https://cdn.jsdelivr.net/npm/motion@10.18.0/dist/motion.js"></script>
+
+<!-- ══════════════════════════════════════════
+     MÓDULOS VozUrbana (orden importa)
+══════════════════════════════════════════ -->
+<script src="js/ui.js"></script>
+<script src="js/voice.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/map.js"></script>
+<script src="js/navigation.js"></script>
+<script src="js/esp32.js"></script>
+<script src="js/sensor-panel.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>

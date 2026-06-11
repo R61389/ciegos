@@ -97,7 +97,7 @@ const Navigation = (() => {
 
     // ── 1. Nominatim con Bolivia ──
     LOG.info('Intentando Nominatim...');
-    result = await _nominatim(normalized + ' Bolivia');
+    let result = await _nominatim(normalized + ' Bolivia');
     if (result) {
       LOG.info(`✓ Nominatim encontró: ${result.name}`);
       return result;

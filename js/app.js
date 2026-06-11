@@ -396,9 +396,9 @@ const App = (() => {
   // ─── Lanzar navegación ────────────────────────
   function _launchNav() {
     AppState.navOn = true;
+    MapEngine.init('map', AppState.lat, AppState.lng);
     UI.showNav();
     MapEngine.show();
-    MapEngine.init('map', AppState.lat, AppState.lng);
     UI.setMid('→ ' + AppState.destName);
 
     MapEngine.calcRoute(AppState.destLat, AppState.destLng, {

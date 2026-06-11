@@ -235,7 +235,8 @@ const MapEngine = (() => {
   function show() {
     const el = document.getElementById('map');
     if (el) el.classList.add('on');
-    if (_map) setTimeout(() => _map.invalidateSize(), 300);
+    setTimeout(() => { if (_map) _map.invalidateSize(); }, 100);
+    setTimeout(() => { if (_map) _map.invalidateSize(); }, 500);
   }
 
   function hide() {

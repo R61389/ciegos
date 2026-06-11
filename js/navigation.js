@@ -95,24 +95,7 @@ const Navigation = (() => {
       LOG.info(`Normalizado: "${rawQuery}" → "${normalized}"`);
     }
 
-    // ── 1. Photon — el más rápido y preciso ──
-    LOG.info('Intentando Photon...');
-    let result = await _photon(normalized, userLat, userLng);
-    if (result) {
-      LOG.info(`✓ Photon encontró: ${result.name}`);
-      return result;
-    }
-
-    // Photon con query original si normalizado falló
-    if (normalized !== rawQuery) {
-      result = await _photon(rawQuery, userLat, userLng);
-      if (result) {
-        LOG.info(`✓ Photon (original) encontró: ${result.name}`);
-        return result;
-      }
-    }
-
-    // ── 2. Nominatim con Bolivia ──
+    // ── 1. Nominatim con Bolivia ──
     LOG.info('Intentando Nominatim...');
     result = await _nominatim(normalized + ' Bolivia');
     if (result) {

@@ -9,8 +9,8 @@
 const AI = (() => {
 
   // ─── Configuración ────────────────────────────
-  const GEMINI_KEY = 'AIzaSyBZ23lkHcgXDS-HnXuJWZkgF1oLrI5KzEQ';
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`;
+  const GEMINI_KEY = () => localStorage.getItem('urban') || '';
+  const GEMINI_URL = () => `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY()}`;
   const TIMEOUT_MS = 8000;   // 8s timeout por request
   const MAX_HISTORY = 20;    // máximo de mensajes en historial
 
@@ -90,7 +90,7 @@ REGLAS:
     ];
 
     try {
-      const res = await fetch(GEMINI_URL, {
+      const res = await fetch(GEMINI_URL(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -298,7 +298,7 @@ REGLAS:
         `Si es un lugar conocido de Bolivia (mercado, plaza, hospital, barrio), pon el nombre de la ciudad también.\n` +
         `Responde SOLO con el nombre. Máximo 8 palabras. Sin explicaciones.`;
       try {
-        const res = await fetch(GEMINI_URL, {
+        const res = await fetch(GEMINI_URL(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -340,7 +340,7 @@ REGLAS:
       if (!_online) return _fallbackStep(step, isFirst, totalDist, totalTime);
 
       try {
-        const res = await fetch(GEMINI_URL, {
+        const res = await fetch(GEMINI_URL(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

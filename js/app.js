@@ -62,22 +62,22 @@ const AppState = {
 // ─── App principal ────────────────────────────
 const App = (() => {
 
-  // ─── Wake word ──────────────────────────────
-  const WAKE_WORDS = ['hey asistente', 'oye asistente', 'hey vozurbana',
-                      'oye vozurbana', 'hey gemini', 'oye gemini', 'asistente'];
-  const STOP_WORDS = ['para', 'stop', 'termina', 'llegué', 'ya llegué',
-                      'listo', 'fin', 'terminamos', 'cancelar'];
-  const SAVE_WORDS = [
-    'guarda esta ubicación', 'guarda la ruta', 'guardar ubicación',
-    'guarda este lugar',     'memoriza este lugar', 'guarda la dirección',
-    'guardar ruta',          'guardar este lugar',  'guarda esta dirección',
-    'guarda esta ruta',      'guardar esta ruta',
+  // ─── Comandos de control ────────────────────
+  // Nota: el filtro "vozurbana" se aplica en voice.js antes de llegar aquí.
+  // Estos arrays solo detectan lo que viene DESPUÉS del prefijo.
+
+  const STOP_WORDS  = ['para', 'stop', 'termina', 'llegué', 'ya llegué',
+                       'listo', 'fin', 'terminamos', 'cancelar', 'detente'];
+  const ALTO_WORDS  = ['alto', 'silencio', 'cállate', 'desactívate', 'apágate'];
+  const SAVE_WORDS  = [
+    'guarda esta ubicación', 'guarda la ruta',   'guardar ubicación',
+    'guarda este lugar',     'memoriza',          'guarda la dirección',
+    'guardar ruta',          'guardar lugar',     'guarda esta dirección',
+    'guarda esta ruta',      'guardar esta ruta', 'guardar aquí',
   ];
   const ROUTES_WORDS = ['mis rutas', 'rutas guardadas', 'lugares guardados',
                         'ver rutas', 'mostrar rutas'];
 
-  let _wakeActive  = false;
-  let _wakeTmr     = null;
   let _initialized = false;
 
   // ─── Inicializar app ─────────────────────────
@@ -127,7 +127,7 @@ const App = (() => {
         const l = document.getElementById('lgps');
         if (l) l.textContent = `GPS ±${acc}m ✓`;
         LOG.info(`GPS listo: ${lat.toFixed(4)}, ${lng.toFixed(4)} ±${acc}m`);
-        Voice.speak('Hola. Ya tengo tu ubicación. Toca la pantalla para comenzar.');
+        Voice.speak('Hola. Ya tengo tu ubicación. Toca la pantalla para comenzar. Recuerda siempre decir vozurbana antes de cada instrucción.');
       },
       (err) => {
         UI.setIdleSt('Activa el GPS en el navegador');
@@ -185,97 +185,145 @@ const App = (() => {
 
     setTimeout(() => {
       const msg = AI.isOnline
-        ? 'Hola. Soy VozUrbana, tu asistente de movilidad. ¿A dónde quieres ir hoy?'
-        : 'Hola. Estoy en modo sin conexión pero puedo ayudarte. ¿A dónde quieres ir?';
+        ? 'Hola. Soy VozUrbana. Di vozurbana seguido de tu instrucción. Por ejemplo: vozurbana llévame al mercado.'
+        : 'Hola. Estoy en modo sin conexión. Di vozurbana seguido de a dónde quieres ir.';
       UI.showAIBubble(msg);
       UI.setMid(AI.isOnline ? 'IA: Gemini ✓' : 'Modo offline');
+      UI.setWakeActive(false);
       Voice.speak(msg, () => Voice.listen('dest', _onVoiceResult));
     }, 400);
   }
 
   // ─── Manejar resultado de voz ─────────────────
+  // Nota: "text" ya llega SIN el prefijo "vozurbana" (filtrado en voice.js).
+  // Un text vacío significa que el usuario solo dijo "vozurbana" sin comando.
   function _onVoiceResult(text, mode) {
     if (Voice.speaking) return; // anti-bucle
 
     const t = text.toLowerCase().trim();
-    LOG.info(`Voz recibida [${mode}]: "${t}"`);
+    LOG.info(`Vozurbana [${mode}]: "${t || '(vacío)'}"`);
+
+    // ── ALTO — desactivar asistente completamente ──
+    if (ALTO_WORDS.some(w => t === w || t.startsWith(w))) {
+      _onAlto();
+      return;
+    }
+
+    // ── COMANDO VACÍO — solo dijeron "vozurbana" ──
+    if (!t) {
+      _onOnlyWakeWord(mode);
+      return;
+    }
 
     // ── Confirmación guardar ruta — PRIORIDAD MÁXIMA ──
     if (AppState.savingRoute) {
-      const si = ['sí','si','s','yes','claro','dale','quiero','guardar','sí quiero','bueno'];
-      const no = ['no','nope','negativo','no gracias','omitir','saltar'];
+      const si = ['sí','si','yes','claro','dale','quiero','guardar','bueno','afirmativo','correcto'];
+      const no = ['no','nope','negativo','omitir','saltar','cancela'];
 
-      if (si.some(w => t === w || t.includes(w))) {
+      if (si.some(w => t === w || t.startsWith(w))) {
         LOG.info('Guardar ruta: SÍ');
         AppState.savingRoute = false;
         _doSaveCurrentRoute();
         return;
       }
-      if (no.some(w => t === w || t.includes(w))) {
+      if (no.some(w => t === w || t.startsWith(w))) {
         LOG.info('Guardar ruta: NO');
         AppState.savingRoute = false;
         _stopNav();
         return;
       }
-      // No reconocido — pedir de nuevo
-      Voice.speakNow('Di sí para guardar la ruta, o no para omitir.');
-      setTimeout(() => Voice.listen('confirm', _onVoiceResult), 1200);
+      Voice.speakNow('Di vozurbana sí para guardar, o vozurbana no para omitir.');
+      setTimeout(() => Voice.listen('confirm', _onVoiceResult), 1300);
       return;
     }
 
-    // ── Modo confirmación — PRIORIDAD MÁXIMA ──
-    // Se activa por estado (AppState.confirming) O por modo 'confirm'
+    // ── Confirmación de destino ──
     if (AppState.confirming || mode === 'confirm') {
-      const si = ['sí','si','s','yes','claro','correcto','ese','eso','vamos',
-                  'adelante','ok','okey','dale','ahí','confirmo','afirmativo',
-                  'quiero','llévame','ir','voy'];
+      const si = ['sí','si','yes','claro','correcto','ese','eso','vamos',
+                  'adelante','ok','okey','dale','confirmo','afirmativo',
+                  'quiero','llévame','voy'];
       const no = ['no','nope','otro','diferente','equivocado','cambia',
-                  'otro lugar','no es','negativo','cancela'];
+                  'otro lugar','negativo','cancela'];
 
-      LOG.info(`Confirmación: comprobando "${t}"`);
+      LOG.info(`Confirmación vozurbana: "${t}"`);
 
       if (si.some(w => t === w || t.startsWith(w + ' ') || t.endsWith(' ' + w))) {
-        LOG.info('Confirmación: SÍ detectado');
-        _onConfirm(true);
-        return;
+        _onConfirm(true); return;
       }
       if (no.some(w => t === w || t.startsWith(w + ' ') || t.endsWith(' ' + w))) {
-        LOG.info('Confirmación: NO detectado');
-        _onConfirm(false);
-        return;
+        _onConfirm(false); return;
       }
 
-      // No reconoció — pedir de nuevo con ejemplos claros
-      LOG.warn(`Confirmación: no reconocida → "${t}"`);
-      Voice.speakNow('Di sí para confirmar, o no para buscar otro lugar.');
+      Voice.speakNow('Di vozurbana sí para confirmar, o vozurbana no para buscar otro lugar.');
       setTimeout(() => Voice.listen('confirm', _onVoiceResult), 1400);
       return;
     }
 
-    // ── Wake word durante navegación ──
-    if (AppState.navOn && !_wakeActive) {
-      if (WAKE_WORDS.some(w => t.includes(w))) {
-        _activateWake();
-        return;
-      }
-      // Comandos de parada siempre activos
+    // ── Durante navegación: cualquier comando vehiculado por vozurbana ──
+    if (AppState.navOn) {
       if (STOP_WORDS.some(w => t.includes(w))) {
-        _stopNav();
+        const m = 'Entendido, paramos.';
+        UI.showAIBubble(m);
+        Voice.speakNow(m, _stopNav);
         return;
       }
-      return; // ignorar el resto durante navegación
-    }
-
-    // ── Modo destino ──
-    if (mode === 'dest') {
-      UI.showUserBubble(text);
-      _searchAndNavigate(text);
+      // Repetir instrucción
+      if (t.includes('repite') || t.includes('otra vez') || t.includes('qué debo') || t.includes('dónde')) {
+        const inst = document.getElementById('nvmain')?.textContent;
+        if (inst) { Voice.speakNow(inst); UI.showAIBubble(inst); }
+        return;
+      }
+      // Cualquier otro comando pasa al chat libre
+      UI.showUserBubble(`vozurbana ${t}`);
+      _handleFreeChat(t);
       return;
     }
 
-    // ── Conversación libre (wake activo o fuera de nav) ──
-    UI.showUserBubble(text);
-    _handleFreeChat(text);
+    // ── Modo destino (fuera de navegación) ──
+    if (mode === 'dest' || mode === 'free') {
+      UI.showUserBubble(`vozurbana ${t}`);
+      _searchAndNavigate(t);
+      return;
+    }
+
+    // ── Conversación libre ──
+    UI.showUserBubble(`vozurbana ${t}`);
+    _handleFreeChat(t);
+  }
+
+  // ── Solo dijeron "vozurbana" — responder y esperar ──
+  function _onOnlyWakeWord(mode) {
+    let m;
+    if (AppState.savingRoute)    m = 'Di vozurbana sí para guardar, o vozurbana no para omitir.';
+    else if (AppState.confirming) m = 'Di vozurbana sí para confirmar, o vozurbana no para otro lugar.';
+    else if (AppState.navOn)      m = 'Dime, ¿en qué te ayudo?';
+    else                          m = 'Dime, ¿a dónde quieres ir?';
+
+    UI.showAIBubble(m);
+    Voice.speakNow(m, () => Voice.listen(mode || Voice.mode, _onVoiceResult));
+  }
+
+  // ── "vozurbana alto" — apagar asistente ──
+  function _onAlto() {
+    LOG.info('Vozurbana ALTO — asistente en espera');
+    Voice.cancel();
+    if (AppState.navOn) {
+      Navigation.stopTimers();
+      MapEngine.hide();
+      UI.hideNav();
+    }
+    AppState.navOn       = false;
+    AppState.confirming  = false;
+    AppState.savingRoute = false;
+
+    const m = 'De acuerdo, me quedo en silencio. Di vozurbana cuando me necesites.';
+    UI.showAIBubble(m);
+    UI.setMid('En espera — di «vozurbana»');
+    UI.setWakeActive(false);
+
+    // Hablar con síntesis pero NO reactivar el mic en callback
+    // El mic sigue activo solo para detectar el próximo "vozurbana"
+    Voice.speak(m);
   }
 
   // ─── Búsqueda y navegación ────────────────────
@@ -393,9 +441,9 @@ const App = (() => {
 
         Navigation.watchGPS();
 
-        // Durante nav: wake word mode
-        Voice.setMode('wake');
-        Voice.listen('wake', _onVoiceResult);
+        // Durante nav: escuchar en modo libre — vozurbana requerido en voice.js
+        Voice.setMode('free');
+        Voice.listen('free', _onVoiceResult);
         UI.setWakeActive(false);
       },
       onError: () => {
@@ -468,31 +516,6 @@ const App = (() => {
     const m = 'Viaje terminado. ¿Quieres ir a otro lugar?';
     UI.showAIBubble(m);
     Voice.speak(m, () => Voice.listen('dest', _onVoiceResult));
-  }
-
-  // ─── Wake word ────────────────────────────────
-  function _activateWake() {
-    _wakeActive = true;
-    UI.setWakeActive(true);
-    clearTimeout(_wakeTmr);
-    Voice.speakNow('Dime.', () => {
-      // Escuchar lo que dice el usuario
-      Voice.listen('free', (text) => {
-        if (!text) return;
-        UI.showUserBubble(text);
-        _handleFreeChat(text);
-        // Auto-desactivar después de responder
-        _wakeTmr = setTimeout(_deactivateWake, 8000);
-      });
-    });
-  }
-
-  function _deactivateWake() {
-    _wakeActive = false;
-    UI.setWakeActive(false);
-    if (AppState.navOn) {
-      Voice.setMode('wake');
-    }
   }
 
   // ─── Chat libre con Gemini ────────────────────
@@ -568,14 +591,9 @@ const App = (() => {
     }
     if (commands.nav) setTimeout(() => _searchAndNavigate(commands.nav), 1500);
 
-    // Volver a escuchar
+    // Volver a escuchar — siempre en modo 'dest' (filtro vozurbana activo en voice.js)
     setTimeout(() => {
-      if (AppState.navOn) {
-        Voice.setMode('wake');
-        _deactivateWake();
-      } else {
-        Voice.listen('dest', _onVoiceResult);
-      }
+      Voice.listen(AppState.navOn ? 'free' : 'dest', _onVoiceResult);
     }, 500);
   }
 

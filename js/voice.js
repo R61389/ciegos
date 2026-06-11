@@ -153,6 +153,23 @@ const Voice = (() => {
     setTimeout(() => window.speechSynthesis.speak(u), 60);
   }
 
+  // ═══════════════════════════════════════════════
+  //  FILTRO WAKE WORD — "vozurbana" obligatorio
+  // ═══════════════════════════════════════════════
+  // Variaciones fonéticas que el reconocedor puede generar:
+  //   vozurbana, voz urbana, bosurbana, bos urbana,
+  //   vosurbana, vos urbana, bozurbana, boz urbana
+  const WAKE_REGEX = /^(?:voz\s?urbana|bos\s?urbana|vos\s?urbana|boz\s?urbana|boz\s?ur\s?bana|voz\s?ur\s?bana)\s*/i;
+
+  function _hasWakeWord(text) {
+    return WAKE_REGEX.test(text.trim());
+  }
+
+  // Devuelve el texto con el prefijo "vozurbana…" eliminado
+  function _stripWakeWord(text) {
+    return text.trim().replace(WAKE_REGEX, '').trim();
+  }
+
   // ─── Pausar/reanudar micrófono ────────────────
   function _pauseMic() {
     if (_recognition) {
@@ -202,7 +219,8 @@ const Voice = (() => {
         LOG.debug('Ignorado — IA hablando');
         return;
       }
-      // Tomar resultado con mayor confianza
+
+      // Tomar resultado con mayor confianza entre todas las alternativas
       let best = '', bestConf = 0;
       for (let i = 0; i < ev.results[0].length; i++) {
         if (ev.results[0][i].confidence > bestConf) {
@@ -213,11 +231,23 @@ const Voice = (() => {
       if (!best) return;
 
       LOG.info(`🎤 Escuché: "${best}" (conf: ${bestConf.toFixed(2)}, modo: ${capturedMode})`);
-      UI.setMicStatus(`Escuché: ${best}`, true);
+
+      // ══ FILTRO VOZURBANA ══════════════════════════════════
+      // Toda instrucción DEBE comenzar con "vozurbana".
+      // Si no lo detectamos al inicio, ignoramos completamente.
+      if (!_hasWakeWord(best)) {
+        LOG.debug(`⊘ Ignorado (sin vozurbana): "${best}"`);
+        UI.setMicStatus('Esperando «vozurbana»...', false);
+        return;
+      }
+
+      // Extraer el comando (lo que viene después de "vozurbana")
+      const command = _stripWakeWord(best);
+      LOG.info(`✅ Vozurbana detectado. Comando: "${command || '(solo activación)'}"`);
+      UI.setMicStatus(`Vozurbana: ${command || '…'}`, true);
       _micRestarts = 0;
 
-      // Usar el modo capturado al crear, no el modo actual
-      if (_onResult) _onResult(best, capturedMode);
+      if (_onResult) _onResult(command, capturedMode);
     };
 
     r.onerror = (err) => {
@@ -258,13 +288,7 @@ const Voice = (() => {
     r.onstart = () => {
       _micActive = true;
       _micRestarts = 0;
-      const labels = {
-        dest:    'Di a dónde quieres ir...',
-        confirm: 'Di sí o no...',
-        free:    'Escuchando...',
-        wake:    'Listo para escuchar...',
-      };
-      UI.setMicStatus(labels[mode] || 'Escuchando...', true);
+      UI.setMicStatus('Esperando «vozurbana»...', false);
       LOG.debug(`Mic iniciado en modo: ${mode}`);
     };
 

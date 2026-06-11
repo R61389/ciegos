@@ -1458,3 +1458,48 @@ html, body {
   align-self: center;
 }
 .rp-del-btn:hover { background: rgba(255,80,80,0.16); }
+
+
+/* ══════════════════════════════════════════════════════
+   VOZURBANA — indicador de wake word estricto
+══════════════════════════════════════════════════════ */
+
+/* El miclbl siempre muestra "Esperando vozurbana" en gris tenue */
+.miclbl {
+  font-size: 11px;
+  color: rgba(0,200,255,0.35) !important;
+  font-family: var(--fhud);
+  letter-spacing: 1px;
+  flex: 1;
+  transition: color 0.3s;
+}
+/* Cuando vozurbana es detectado, se vuelve brillante brevemente */
+.miclbl.voz-active {
+  color: var(--g) !important;
+  text-shadow: 0 0 8px rgba(0,255,136,0.5);
+}
+
+/* wkind: indicador más claro con vozurbana como nombre */
+.wkind {
+  position: absolute;
+  bottom: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,4,20,0.88);
+  border: 1px solid rgba(0,200,255,0.2);
+  border-radius: 20px;
+  padding: 5px 14px;
+  font-family: var(--fhud);
+  font-size: 9px;
+  color: rgba(0,200,255,0.35);
+  letter-spacing: 1.5px;
+  white-space: nowrap;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+/* Cuando está en espera visible muestra el hint "di vozurbana" */
+.wkind.on  { opacity: 1; }
+.wkind.aw  { border-color: rgba(0,255,136,0.6); color: var(--g);
+             text-shadow: 0 0 8px rgba(0,255,136,0.3); }

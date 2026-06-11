@@ -336,10 +336,10 @@ const UI = (() => {
     const wi = $('wkind');
     if (!wi) return;
     if (active) {
-      wi.textContent = '✦ Dime...';
+      wi.textContent = '✦ Vozurbana activo — dime...';
       wi.classList.add('aw');
     } else {
-      wi.textContent = 'Di «hey asistente» para hablar';
+      wi.textContent = 'Di «vozurbana» seguido de tu instrucción';
       wi.classList.remove('aw');
     }
   }

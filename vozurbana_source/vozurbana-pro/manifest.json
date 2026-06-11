@@ -1,0 +1,24 @@
+{
+  "name": "VozUrbana IA — IBC Bolivia",
+  "short_name": "VozUrbana",
+  "description": "Asistente de movilidad urbana por voz para personas con discapacidad visual",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#000510",
+  "theme_color": "#000510",
+  "lang": "es",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "categories": ["accessibility", "navigation"],
+  "shortcuts": [
+    {
+      "name": "Iniciar navegación",
+      "short_name": "Navegar",
+      "description": "Abre VozUrbana listo para navegar",
+      "url": "/"
+    }
+  ]
+}

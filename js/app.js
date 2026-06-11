@@ -5,14 +5,6 @@
 
 'use strict';
 
-// ─── Logger global ────────────────────────────
-const LOG = {
-  info:  (...a) => console.log(`[VozUrbana]`, ...a),
-  warn:  (...a) => console.warn(`[VozUrbana]`, ...a),
-  debug: (...a) => console.debug(`[VozUrbana]`, ...a),
-  error: (...a) => console.error(`[VozUrbana]`, ...a),
-};
-
 // ─── Utils globales ───────────────────────────
 const Utils = {
   fmtDistSh(m) {
@@ -87,23 +79,11 @@ const App = (() => {
 
     LOG.info('VozUrbana iniciando...');
 
-    // ── Módulo ESP32 ──
-    SensorPanel.init();
-
     // ── Módulo Rutas Guardadas ──
     RoutesPanel.init();
 
     // ── Modal ElevenLabs ──
     _initELSettings();
-
-    // Botón limpiar registro ESP32
-    document.getElementById('esp-log-clear')?.addEventListener('click', () => {
-      EventLog.clear();
-      const list = document.getElementById('esp-log-list');
-      if (list) {
-        list.innerHTML = '<div class="esp-log-empty">Sin registros aún.<br>Conecta el ESP32 para comenzar.</div>';
-      }
-    });
 
     // Reloj
     UI.updateClock();

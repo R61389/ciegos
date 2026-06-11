@@ -7,7 +7,7 @@
 const http = require('http');
 const https = require('https');
 
-const PORT = 3001;
+const PORT = 3002;
 const GEMINI_HOST = 'generativelanguage.googleapis.com';
 const GEMINI_PATH = '/v1beta/models/gemini-2.0-flash:generateContent';
 

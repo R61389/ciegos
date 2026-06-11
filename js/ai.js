@@ -12,7 +12,7 @@ const AI = (() => {
   const GEMINI_KEY = () => localStorage.getItem('urban') || '';
   const GEMINI_URL = () => {
     const k = GEMINI_KEY();
-    if (k.startsWith('AQ.')) return 'http://localhost:3001';
+    if (k.startsWith('AQ.')) return 'http://localhost:3002';
     return `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${k}`;
   };
   const GEMINI_HEADERS = () => {

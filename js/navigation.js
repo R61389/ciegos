@@ -13,6 +13,7 @@ const Navigation = (() => {
   const WALK_MPS     = 1.25;   // 4.5 km/h en metros/segundo
   const STEP_RADIUS  = 28;     // metros para avanzar al siguiente paso
   const NOMINATIM_UA = 'VozUrbana-IBC/1.0 (ibc.org.bo)';
+  const MAPS_KEY     = () => localStorage.getItem('maps_key') || '';
   const GPS_OPTS     = { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 };
 
   // Coordenadas centro de Bolivia para priorizar resultados
@@ -95,7 +96,15 @@ const Navigation = (() => {
       LOG.info(`Normalizado: "${rawQuery}" → "${normalized}"`);
     }
 
-    // ── 1. Nominatim con Bolivia ──
+    // ── 1. Google Geocoding (si hay key) ──
+    if (MAPS_KEY()) {
+      let result = await _googleGeocode(normalized + ' Bolivia');
+      if (result) { LOG.info(`✓ Google encontró: ${result.name}`); return result; }
+      result = await _googleGeocode(rawQuery + ' Bolivia');
+      if (result) { LOG.info(`✓ Google (original) encontró: ${result.name}`); return result; }
+    }
+
+    // ── 2. Nominatim con Bolivia ──
     LOG.info('Intentando Nominatim...');
     let result = await _nominatim(normalized + ' Bolivia');
     if (result) {
@@ -173,6 +182,34 @@ const Navigation = (() => {
       };
     } catch (e) {
       LOG.debug('Photon error:', e.message);
+      return null;
+    }
+  }
+
+  // ─── Google Geocoding API ─────────────────────
+  async function _googleGeocode(query) {
+    try {
+      const params = new URLSearchParams({
+        address: query,
+        key:     MAPS_KEY(),
+        language: 'es',
+        region:  'BO',
+      });
+      const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params}`, {
+        signal: AbortSignal.timeout(6000),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data.status !== 'OK' || !data.results?.length) return null;
+      const r = data.results[0];
+      return {
+        name:     r.formatted_address.split(',').slice(0, 2).join(', ').trim(),
+        fullName: r.formatted_address,
+        lat:      r.geometry.location.lat,
+        lng:      r.geometry.location.lng,
+        source:   'google',
+      };
+    } catch (_) {
       return null;
     }
   }

@@ -13,7 +13,7 @@ const AI = (() => {
   const GEMINI_URL = () => {
     const k = GEMINI_KEY();
     if (k.startsWith('AQ.')) return 'http://localhost:3002';
-    return `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${k}`;
+    return `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${k}`;
   };
   const GEMINI_HEADERS = () => {
     const k = GEMINI_KEY();

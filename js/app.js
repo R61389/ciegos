@@ -51,8 +51,12 @@ const AppState = {
   destLat:  null,
   destLng:  null,
   // Flujo
-  confirming: false,
-  pending:    null,   // {name, lat, lng}
+  confirming:   false,
+  pending:      null,    // {name, lat, lng}
+  // Guardar ruta
+  savingRoute:  false,   // true cuando se pregunta si guardar
+  lastRouteDist: null,   // metros de la última ruta completada
+  lastRouteSec:  null,   // segundos de la última ruta completada
 };
 
 // ─── App principal ────────────────────────────
@@ -63,9 +67,17 @@ const App = (() => {
                       'oye vozurbana', 'hey gemini', 'oye gemini', 'asistente'];
   const STOP_WORDS = ['para', 'stop', 'termina', 'llegué', 'ya llegué',
                       'listo', 'fin', 'terminamos', 'cancelar'];
+  const SAVE_WORDS = [
+    'guarda esta ubicación', 'guarda la ruta', 'guardar ubicación',
+    'guarda este lugar',     'memoriza este lugar', 'guarda la dirección',
+    'guardar ruta',          'guardar este lugar',  'guarda esta dirección',
+    'guarda esta ruta',      'guardar esta ruta',
+  ];
+  const ROUTES_WORDS = ['mis rutas', 'rutas guardadas', 'lugares guardados',
+                        'ver rutas', 'mostrar rutas'];
 
-  let _wakeActive = false;
-  let _wakeTmr    = null;
+  let _wakeActive  = false;
+  let _wakeTmr     = null;
   let _initialized = false;
 
   // ─── Inicializar app ─────────────────────────
@@ -78,7 +90,13 @@ const App = (() => {
     // ── Módulo ESP32 ──
     SensorPanel.init();
 
-    // Botón limpiar registro
+    // ── Módulo Rutas Guardadas ──
+    RoutesPanel.init();
+
+    // ── Modal ElevenLabs ──
+    _initELSettings();
+
+    // Botón limpiar registro ESP32
     document.getElementById('esp-log-clear')?.addEventListener('click', () => {
       EventLog.clear();
       const list = document.getElementById('esp-log-list');
@@ -181,6 +199,29 @@ const App = (() => {
 
     const t = text.toLowerCase().trim();
     LOG.info(`Voz recibida [${mode}]: "${t}"`);
+
+    // ── Confirmación guardar ruta — PRIORIDAD MÁXIMA ──
+    if (AppState.savingRoute) {
+      const si = ['sí','si','s','yes','claro','dale','quiero','guardar','sí quiero','bueno'];
+      const no = ['no','nope','negativo','no gracias','omitir','saltar'];
+
+      if (si.some(w => t === w || t.includes(w))) {
+        LOG.info('Guardar ruta: SÍ');
+        AppState.savingRoute = false;
+        _doSaveCurrentRoute();
+        return;
+      }
+      if (no.some(w => t === w || t.includes(w))) {
+        LOG.info('Guardar ruta: NO');
+        AppState.savingRoute = false;
+        _stopNav();
+        return;
+      }
+      // No reconocido — pedir de nuevo
+      Voice.speakNow('Di sí para guardar la ruta, o no para omitir.');
+      setTimeout(() => Voice.listen('confirm', _onVoiceResult), 1200);
+      return;
+    }
 
     // ── Modo confirmación — PRIORIDAD MÁXIMA ──
     // Se activa por estado (AppState.confirming) O por modo 'confirm'
@@ -316,6 +357,9 @@ const App = (() => {
     AppState.destName = place.name;
     AppState.destLat  = place.lat;
     AppState.destLng  = place.lng;
+    // Guardar datos de ruta para el save posterior
+    AppState.lastRouteDist = dist   || null;
+    AppState.lastRouteSec  = timeSec || null;
 
     UI.showAIBubble(info);
     Voice.speak(info, () => setTimeout(_launchNav, 400));
@@ -373,10 +417,35 @@ const App = (() => {
   }
 
   function _onNavArrived() {
-    const m = `¡Llegaste a ${AppState.destName}! Espero haberte acompañado bien. ¡Que tengas un excelente día!`;
+    const m = `¡Llegaste a ${AppState.destName}! Espero haberte acompañado bien.`;
     UI.showAIBubble(m);
-    Voice.speakNow(m);
-    setTimeout(_stopNav, 9000);
+    // Tras celebrar, preguntar si desea guardar la ruta
+    Voice.speakNow(m, () => setTimeout(_askSaveRoute, 1200));
+  }
+
+  // ─── Preguntar si guardar ruta ────────────────
+  function _askSaveRoute() {
+    const short = AppState.destName.split(',')[0].trim();
+    const m = `¿Quieres guardar "${short}" en tus rutas favoritas? Di sí o no.`;
+    AppState.savingRoute = true;
+    Voice.setMode('confirm');
+    UI.showAIBubble(m);
+    Voice.speak(m, () => Voice.listen('confirm', _onVoiceResult));
+  }
+
+  function _doSaveCurrentRoute() {
+    const short = AppState.destName.split(',')[0].trim();
+    RoutesPanel.addRoute(
+      AppState.destName,
+      AppState.destLat,
+      AppState.destLng,
+      AppState.lastRouteDist,
+      AppState.lastRouteSec
+    );
+    const m = `¡Listo! Guardé "${short}" en tus rutas. Puedes volver aquí cuando quieras.`;
+    UI.showAIBubble(m);
+    Voice.speak(m, _stopNav);
+    LOG.info(`[App] Ruta guardada: ${AppState.destName}`);
   }
 
   // ─── Detener navegación ───────────────────────
@@ -429,6 +498,47 @@ const App = (() => {
   // ─── Chat libre con Gemini ────────────────────
   async function _handleFreeChat(text) {
     const t = text.toLowerCase();
+
+    // Guardar ubicación / ruta actual
+    if (SAVE_WORDS.some(w => t.includes(w))) {
+      if (AppState.destName) {
+        _doSaveCurrentRoute();
+      } else {
+        // Guardar posición GPS actual sin destino específico
+        if (AppState.lat && AppState.lng) {
+          RoutesPanel.addRoute(
+            `Mi ubicación ${new Date().toLocaleTimeString('es', { hour:'2-digit', minute:'2-digit' })}`,
+            AppState.lat, AppState.lng, null, null
+          );
+          const m = 'Listo, guardé tu ubicación actual en tus rutas.';
+          UI.showAIBubble(m);
+          Voice.speakNow(m);
+        } else {
+          const m = 'Todavía no tengo tu ubicación GPS. Espera un momento.';
+          UI.showAIBubble(m);
+          Voice.speakNow(m);
+        }
+      }
+      setTimeout(() => {
+        if (!AppState.navOn) Voice.listen('dest', _onVoiceResult);
+      }, 500);
+      return;
+    }
+
+    // Ver rutas guardadas
+    if (ROUTES_WORDS.some(w => t.includes(w))) {
+      RoutesPanel.open();
+      const n   = SavedRoutes.count();
+      const m   = n > 0
+        ? `Tienes ${n} ruta${n > 1 ? 's' : ''} guardada${n > 1 ? 's' : ''}. Te las muestro en pantalla.`
+        : 'Aún no tienes rutas guardadas. Cuando llegues a un lugar puedes guardarla.';
+      UI.showAIBubble(m);
+      Voice.speakNow(m);
+      setTimeout(() => {
+        if (!AppState.navOn) Voice.listen('dest', _onVoiceResult);
+      }, 500);
+      return;
+    }
 
     // Parar navegación
     if (STOP_WORDS.some(w => t.includes(w)) && AppState.navOn) {
@@ -487,10 +597,128 @@ const App = (() => {
     if (commands.nav) setTimeout(() => _searchAndNavigate(commands.nav), 1500);
   }
 
+  // ─── ElevenLabs Settings Modal ───────────────
+  function _initELSettings() {
+    const btn     = document.getElementById('el-settings-btn');
+    const modal   = document.getElementById('el-modal');
+    const close   = document.getElementById('el-modal-close');
+    const keyInp  = document.getElementById('el-api-key');
+    const voiceSel= document.getElementById('el-voice-select');
+    const testBtn = document.getElementById('el-test-btn');
+    const saveBtn = document.getElementById('el-save-btn');
+    const fetchBtn= document.getElementById('el-fetch-voices');
+
+    if (!btn || !modal) return;
+
+    // Pre-rellenar si ya hay config
+    if (keyInp)   keyInp.value = ElevenLabs.apiKey;
+    if (voiceSel) _populateVoiceSelect(voiceSel, ElevenLabs.voiceId, ElevenLabs.presetVoices);
+
+    // Toggle mostrar/ocultar clave
+    document.getElementById('el-toggle-key')?.addEventListener('click', () => {
+      if (!keyInp) return;
+      keyInp.type = keyInp.type === 'password' ? 'text' : 'password';
+    });
+
+    // Actualizar badge si ya está configurado
+    const badge = document.getElementById('el-active-badge');
+    if (badge) badge.style.display = ElevenLabs.isConfigured() ? 'flex' : 'none';
+
+    btn.addEventListener('click', () => {
+      modal.classList.add('open');
+      if (typeof Motion !== 'undefined') {
+        Motion.animate(modal.querySelector('.el-modal-box'),
+          { opacity: [0, 1], scale: [0.93, 1] },
+          { duration: 0.3, easing: [0.34, 1.56, 0.64, 1] });
+      }
+    });
+
+    const _closeModal = () => {
+      if (typeof Motion !== 'undefined') {
+        Motion.animate(modal.querySelector('.el-modal-box'),
+          { opacity: [1, 0], scale: [1, 0.93] },
+          { duration: 0.22 }).then(() => modal.classList.remove('open'));
+      } else { modal.classList.remove('open'); }
+    };
+
+    close?.addEventListener('click', _closeModal);
+    modal.addEventListener('click', e => { if (e.target === modal) _closeModal(); });
+
+    testBtn?.addEventListener('click', async () => {
+      const key = keyInp?.value.trim();
+      if (!key) { _elStatus('Ingresa tu API Key primero', 'warn'); return; }
+      ElevenLabs.configure({ apiKey: key, voiceId: voiceSel?.value });
+      testBtn.disabled = true;
+      testBtn.textContent = 'Probando…';
+      _elStatus('Generando audio…', 'info');
+      const ok = await ElevenLabs.testVoice();
+      testBtn.disabled = false;
+      testBtn.textContent = 'Probar';
+      _elStatus(ok ? '✓ Voz funcionando correctamente' : '✗ Error — verifica tu API Key', ok ? 'ok' : 'err');
+    });
+
+    fetchBtn?.addEventListener('click', async () => {
+      const key = keyInp?.value.trim();
+      if (!key) { _elStatus('Ingresa tu API Key primero', 'warn'); return; }
+      ElevenLabs.configure({ apiKey: key });
+      fetchBtn.disabled = true;
+      fetchBtn.textContent = 'Cargando…';
+      const voices = await ElevenLabs.fetchUserVoices();
+      fetchBtn.disabled = false;
+      fetchBtn.textContent = 'Cargar mis voces';
+      if (voices.length > 0) {
+        _populateVoiceSelect(voiceSel, ElevenLabs.voiceId, voices);
+        _elStatus(`✓ ${voices.length} voces encontradas`, 'ok');
+      } else {
+        _elStatus('No se pudieron cargar voces', 'err');
+      }
+    });
+
+    saveBtn?.addEventListener('click', () => {
+      const key     = keyInp?.value.trim();
+      const voiceId = voiceSel?.value;
+      if (!key) { _elStatus('Ingresa tu API Key', 'warn'); return; }
+      ElevenLabs.configure({ apiKey: key, voiceId });
+      _elStatus('✓ Configuración guardada', 'ok');
+      setTimeout(_closeModal, 1200);
+      // Actualizar badge en header
+      const badge = document.getElementById('el-active-badge');
+      if (badge) badge.style.display = ElevenLabs.isConfigured() ? 'flex' : 'none';
+    });
+  }
+
+  function _populateVoiceSelect(select, currentId, voices) {
+    if (!select) return;
+    select.innerHTML = voices.map(v =>
+      `<option value="${v.id}" ${v.id === currentId ? 'selected' : ''}>${v.name}</option>`
+    ).join('');
+  }
+
+  function _elStatus(msg, type) {
+    const el = document.getElementById('el-status-msg');
+    if (!el) return;
+    el.textContent = msg;
+    el.className   = `el-status ${type || ''}`;
+  }
+
   // ─── API pública ──────────────────────────────
   return {
     init,
     onTapIdle: _onTapIdle,
+    // Navegar a ruta guardada (llamado desde RoutesPanel)
+    navigateTo(route) {
+      if (!AppState.gpsOk) {
+        Voice.speakNow('Necesito tu ubicación GPS para navegar.');
+        return;
+      }
+      AppState.pending = { name: route.name, lat: route.lat, lng: route.lng };
+      AppState.lastRouteDist = route.distMeters;
+      AppState.lastRouteSec  = route.timeSec;
+      const short = route.name.split(',')[0].trim();
+      const m = `¡Vamos a ${short}! Calculando la ruta.`;
+      UI.showAIBubble(m);
+      Voice.speakNow(m, () => _checkAndLaunch(AppState.pending));
+    },
   };
 
 })();

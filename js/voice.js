@@ -1,6 +1,7 @@
 /**
  * voice.js — Módulo de voz VozUrbana
- * Maneja síntesis (hablar) y reconocimiento (escuchar)
+ * Síntesis: ElevenLabs (primario) → Web Speech API (fallback)
+ * Reconocimiento: Web Speech API
  * Anti-bucle garantizado, cola de mensajes, reconexión automática
  */
 
@@ -61,43 +62,70 @@ const Voice = (() => {
     _doSpeak(text, () => {
       _processingQueue = false;
       if (cb) cb();
-      _processQueue(); // siguiente en cola
+      _processQueue();
     });
   }
 
   function _doSpeak(text, cb) {
-    if (!text || !window.speechSynthesis) {
-      _speaking = false;
-      if (cb) cb();
-      return;
-    }
+    if (!text) { _speaking = false; if (cb) cb(); return; }
 
-    LOG.info(`🔊 Hablando: "${text.slice(0, 50)}..."`);
-
-    // ── ANTI-BUCLE: apagar micrófono ANTES de hablar ──
+    LOG.info(`🔊 Hablando: "${text.slice(0, 50)}…"`);
     _speaking = true;
     _pauseMic();
     UI.startWave();
     UI.announce(text);
 
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang    = 'es';
-    u.rate    = 1.0;
-    u.pitch   = 1.1;
-    u.volume  = 1.0;
-    if (_synthVoice) u.voice = _synthVoice;
+    // ── ElevenLabs (primario) ──
+    if (typeof ElevenLabs !== 'undefined' && ElevenLabs.isConfigured()) {
+      _doSpeakEL(text, cb);
+      return;
+    }
 
-    u.onstart = () => {
-      _speaking = true;
-      UI.startWave();
-    };
+    // ── Web Speech API (fallback) ──
+    _doSpeakNative(text, cb);
+  }
 
-    u.onend = () => {
-      LOG.info('🔊 Fin de síntesis');
+  // ElevenLabs TTS — async con fallback
+  async function _doSpeakEL(text, cb) {
+    const done = () => {
       _speaking = false;
       UI.stopWave();
-      // Esperar antes de reactivar micrófono
+      setTimeout(() => {
+        if (cb) cb();
+        _resumeMic();
+      }, SILENCE_AFTER_SPEAK);
+    };
+
+    const ok = await ElevenLabs.speak(text, null, done);
+    if (!ok) {
+      LOG.warn('ElevenLabs falló → Web Speech API');
+      _doSpeakNative(text, cb);
+    }
+  }
+
+  // Web Speech API nativo
+  function _doSpeakNative(text, cb) {
+    if (!window.speechSynthesis) {
+      _speaking = false;
+      UI.stopWave();
+      if (cb) cb();
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang   = 'es';
+    u.rate   = 1.0;
+    u.pitch  = 1.1;
+    u.volume = 1.0;
+    if (_synthVoice) u.voice = _synthVoice;
+
+    u.onstart = () => { _speaking = true; UI.startWave(); };
+
+    u.onend = () => {
+      LOG.info('🔊 Fin de síntesis nativa');
+      _speaking = false;
+      UI.stopWave();
       setTimeout(() => {
         if (cb) cb();
         _resumeMic();
@@ -114,14 +142,12 @@ const Voice = (() => {
       }, SILENCE_AFTER_SPEAK);
     };
 
-    // Workaround Chrome: la síntesis se pausa sola después de ~15s
+    // Workaround Chrome ~15s pause bug
     const keepAlive = setInterval(() => {
       if (window.speechSynthesis.speaking) {
         window.speechSynthesis.pause();
         window.speechSynthesis.resume();
-      } else {
-        clearInterval(keepAlive);
-      }
+      } else { clearInterval(keepAlive); }
     }, 10000);
 
     setTimeout(() => window.speechSynthesis.speak(u), 60);
@@ -290,6 +316,7 @@ const Voice = (() => {
     speakNow(text, cb) {
       _speakQueue = [];
       if (window.speechSynthesis) window.speechSynthesis.cancel();
+      if (typeof ElevenLabs !== 'undefined') ElevenLabs.cancel();
       _processingQueue = false;
       _speaking = false;
       _speakQueue.push({ text, cb });
@@ -301,6 +328,7 @@ const Voice = (() => {
       _speakQueue = [];
       _processingQueue = false;
       if (window.speechSynthesis) window.speechSynthesis.cancel();
+      if (typeof ElevenLabs !== 'undefined') ElevenLabs.cancel();
       _speaking = false;
       UI.stopWave();
     },

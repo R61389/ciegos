@@ -111,7 +111,16 @@
   <header class="hdr" aria-label="Estado del sistema">
     <span class="hlogo">VOZURBANA</span>
     <span class="hmid" id="hmid" role="status" aria-live="polite">Iniciando...</span>
-    <span class="hgps" id="hgps" aria-label="Precisión GPS">GPS ✓</span>
+    <div class="hdr-actions" aria-label="Acciones">
+      <!-- Botón ElevenLabs settings -->
+      <button id="el-settings-btn" class="hdr-icon-btn" aria-label="Configurar voz ElevenLabs" title="Configurar ElevenLabs">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+        </svg>
+        <span id="el-active-badge" class="el-active-badge" style="display:none" aria-hidden="true"></span>
+      </button>
+      <span class="hgps" id="hgps" aria-label="Precisión GPS">GPS ✓</span>
+    </div>
   </header>
 
   <!-- Instrucción de navegación -->
@@ -437,6 +446,137 @@
 
   </div><!-- /esp-panel -->
 
+  <!-- ══════════════════════════════════════════
+       RUTAS GUARDADAS
+  ══════════════════════════════════════════ -->
+
+  <!-- Toast confirmación de guardado -->
+  <div id="routes-toast" class="routes-toast" aria-live="polite"></div>
+
+  <!-- FAB rutas guardadas -->
+  <button id="routes-fab" class="routes-fab" aria-label="Ver mis rutas guardadas" data-count="0">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+      <circle cx="12" cy="10" r="3"/>
+    </svg>
+    <span id="routes-badge" class="routes-badge" style="display:none" aria-hidden="true">0</span>
+  </button>
+
+  <!-- Panel rutas guardadas -->
+  <div id="routes-panel" class="routes-panel" role="dialog" aria-modal="true" aria-label="Mis rutas guardadas">
+
+    <div class="esp-handle" aria-hidden="true"></div>
+
+    <div class="routes-header">
+      <div class="routes-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+          <circle cx="12" cy="10" r="3"/>
+        </svg>
+        Mis Rutas Guardadas
+      </div>
+      <div class="routes-header-actions">
+        <button id="routes-clear-btn" class="routes-clear-btn" aria-label="Limpiar todas las rutas">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          Limpiar
+        </button>
+        <button id="routes-close" class="esp-close" aria-label="Cerrar panel de rutas">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="routes-hint" aria-label="Instrucción">
+      Di <strong>«guarda esta ubicación»</strong> o <strong>«guarda la ruta»</strong> para añadir lugares
+    </div>
+
+    <!-- Estado vacío -->
+    <div id="routes-empty" class="routes-empty">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="color:rgba(0,200,255,0.18)">
+        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+      </svg>
+      <p>Sin rutas guardadas aún.<br>Al terminar una navegación te preguntaré si deseas guardarla.</p>
+    </div>
+
+    <!-- Lista de rutas -->
+    <div id="routes-list" class="rp-list" role="list" aria-label="Lista de rutas guardadas" style="display:none"></div>
+
+  </div><!-- /routes-panel -->
+
+  <!-- ══════════════════════════════════════════
+       MODAL ELEVENLABS
+  ══════════════════════════════════════════ -->
+  <div id="el-modal" class="el-modal" role="dialog" aria-modal="true" aria-label="Configurar voz ElevenLabs">
+    <div class="el-modal-box">
+
+      <div class="el-modal-header">
+        <div class="el-modal-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+          </svg>
+          ElevenLabs TTS
+        </div>
+        <button id="el-modal-close" class="esp-close" aria-label="Cerrar configuración">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <p class="el-modal-desc">
+        Activa voces de alta calidad en español para VozUrbana. Necesitas una API Key de
+        <span style="color:var(--c)">elevenlabs.io</span>.
+      </p>
+
+      <!-- API Key -->
+      <div class="el-field-group">
+        <label class="el-label" for="el-api-key">API Key</label>
+        <div class="el-input-row">
+          <input
+            id="el-api-key"
+            class="el-input"
+            type="password"
+            autocomplete="off"
+            placeholder="sk-…  (pega tu clave aquí)"
+            aria-label="API Key de ElevenLabs"
+          />
+          <button class="el-toggle-key" id="el-toggle-key" aria-label="Mostrar u ocultar clave API" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Selección de voz -->
+      <div class="el-field-group">
+        <div class="el-label-row">
+          <label class="el-label" for="el-voice-select">Voz</label>
+          <button id="el-fetch-voices" class="el-link-btn" type="button">Cargar mis voces</button>
+        </div>
+        <select id="el-voice-select" class="el-select" aria-label="Seleccionar voz de ElevenLabs">
+          <!-- Poblado por JS -->
+        </select>
+      </div>
+
+      <!-- Mensaje de estado -->
+      <div id="el-status-msg" class="el-status" aria-live="polite"></div>
+
+      <!-- Acciones -->
+      <div class="el-modal-actions">
+        <button id="el-test-btn" class="el-btn el-btn-sec" type="button">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Probar
+        </button>
+        <button id="el-save-btn" class="el-btn el-btn-pri" type="button">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+          Guardar
+        </button>
+      </div>
+
+      <p class="el-modal-note">
+        Sin API Key, VozUrbana usa Web Speech API del navegador de forma gratuita.
+      </p>
+
+    </div>
+  </div><!-- /el-modal -->
+
 </div><!-- /s-main -->
 
 
@@ -452,12 +592,14 @@
      MÓDULOS VozUrbana (orden importa)
 ══════════════════════════════════════════ -->
 <script src="js/ui.js"></script>
+<script src="js/elevenlabs.js"></script>
 <script src="js/voice.js"></script>
 <script src="js/ai.js"></script>
 <script src="js/map.js"></script>
 <script src="js/navigation.js"></script>
 <script src="js/esp32.js"></script>
 <script src="js/sensor-panel.js"></script>
+<script src="js/saved-routes.js"></script>
 <script src="js/app.js"></script>
 
 </body>

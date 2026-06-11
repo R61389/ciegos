@@ -72,21 +72,89 @@ const MapEngine = (() => {
 
   // ─── Calcular y mostrar ruta ──────────────────
   function calcRoute(destLat, destLng, callbacks) {
-    if (!_map) {
-      LOG.warn('Mapa no inicializado');
-      return;
-    }
+    if (!_map) { LOG.warn('Mapa no inicializado'); return; }
 
     _onRoute = callbacks?.onRoute;
     _onError = callbacks?.onError;
-
-    // Limpiar ruta anterior
     _clearRoute();
 
-    // Marcador destino
     _destMk = L.marker([destLat, destLng], { icon: _destIcon() }).addTo(_map);
 
-    // Routing Machine con OSRM peatonal
+    const mapsKey = localStorage.getItem('maps_key');
+    if (mapsKey) {
+      _calcRouteGoogle(destLat, destLng, mapsKey);
+    } else {
+      _calcRouteOSRM(destLat, destLng);
+    }
+  }
+
+  // ─── Ruta con Google Directions ───────────────
+  async function _calcRouteGoogle(destLat, destLng, key) {
+    try {
+      const params = new URLSearchParams({
+        origin:      `${AppState.lat},${AppState.lng}`,
+        destination: `${destLat},${destLng}`,
+        mode:        'walking',
+        language:    'es',
+        key,
+      });
+      const res  = await fetch(`https://maps.googleapis.com/maps/api/directions/json?${params}`);
+      const data = await res.json();
+
+      if (data.status !== 'OK' || !data.routes?.length) {
+        LOG.warn('Google Directions falló, usando OSRM');
+        _calcRouteOSRM(destLat, destLng);
+        return;
+      }
+
+      const route = data.routes[0];
+      const leg   = route.legs[0];
+
+      // Dibujar polyline decodificada
+      const points = _decodePolyline(route.overview_polyline.points);
+      const poly = L.polyline(points, {
+        color:     'rgba(0,220,255,0.78)',
+        weight:    4,
+        dashArray: '14 7',
+      }).addTo(_map);
+      const polyBg = L.polyline(points, {
+        color:  'rgba(0,200,255,0.1)',
+        weight: 24,
+      }).addTo(_map);
+      _map.fitBounds(poly.getBounds(), { padding: [40, 40] });
+
+      // Construir steps compatibles con el resto de la app
+      const steps = leg.steps.map(s => ({
+        type:        s.maneuver || 'continue',
+        modifier:    s.maneuver || '',
+        road:        s.html_instructions.replace(/<[^>]+>/g, ''),
+        distance:    s.distance.value,
+        duration:    s.duration.value,
+        instruction: s.html_instructions.replace(/<[^>]+>/g, ''),
+      }));
+
+      const totalDist = leg.distance.value;
+      const realSec   = Navigation.calcRealTime(totalDist);
+      const useSec    = Math.max(leg.duration.value, realSec);
+
+      AppState.steps    = steps;
+      AppState.stepIdx  = 0;
+      AppState.totalSec = useSec;
+      AppState.remSec   = useSec;
+
+      // Guardar referencia para limpiar después
+      _route = { _polylines: [poly, polyBg], remove: () => { poly.remove(); polyBg.remove(); } };
+
+      if (_onRoute) _onRoute({ summary: { totalDistance: totalDist, totalTime: useSec } }, useSec);
+
+    } catch (e) {
+      LOG.warn('Error Google Directions:', e.message);
+      _calcRouteOSRM(destLat, destLng);
+    }
+  }
+
+  // ─── Ruta con OSRM (fallback) ─────────────────
+  function _calcRouteOSRM(destLat, destLng) {
     _route = L.Routing.control({
       waypoints: [
         L.latLng(AppState.lat, AppState.lng),
@@ -112,30 +180,42 @@ const MapEngine = (() => {
     }).addTo(_map);
 
     _route.on('routesfound', (e) => {
-      const rt = e.routes[0];
-      LOG.info(`Ruta calculada: ${Utils.fmtDistSh(rt.summary.totalDistance)}`);
-
-      // Calcular tiempo real peatonal
+      const rt    = e.routes[0];
       const realSec = Navigation.calcRealTime(rt.summary.totalDistance);
       const useSec  = Math.max(rt.summary.totalTime, realSec);
-
       AppState.steps    = rt.instructions;
       AppState.stepIdx  = 0;
       AppState.totalSec = useSec;
       AppState.remSec   = useSec;
-
       if (_onRoute) _onRoute(rt, useSec);
     });
 
     _route.on('routingerror', (e) => {
-      LOG.warn('Error de ruta:', e.error?.message);
+      LOG.warn('Error OSRM:', e.error?.message);
       if (_onError) _onError(e);
     });
   }
 
+  // ─── Decodificar polyline de Google ───────────
+  function _decodePolyline(encoded) {
+    const pts = [];
+    let idx = 0, lat = 0, lng = 0;
+    while (idx < encoded.length) {
+      let b, shift = 0, result = 0;
+      do { b = encoded.charCodeAt(idx++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      lat += (result & 1) ? ~(result >> 1) : result >> 1;
+      shift = 0; result = 0;
+      do { b = encoded.charCodeAt(idx++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      lng += (result & 1) ? ~(result >> 1) : result >> 1;
+      pts.push([lat / 1e5, lng / 1e5]);
+    }
+    return pts;
+  }
+
   function _clearRoute() {
-    if (_route && _map) {
-      _map.removeControl(_route);
+    if (_route) {
+      if (typeof _route.remove === 'function') _route.remove();
+      else if (typeof _route.removeFrom === 'function' && _map) _map.removeControl(_route);
       _route = null;
     }
     if (_destMk && _map) {
@@ -149,13 +229,6 @@ const MapEngine = (() => {
     if (!_map || !_userMk) return;
     _userMk.setLatLng([lat, lng]);
     if (AppState.navOn) _map.panTo([lat, lng]);
-
-    // Actualizar indicadores del panel sensor con nueva posición GPS
-    const dualGps = document.getElementById('esp-dual-gps');
-    if (dualGps) dualGps.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-
-    const coordsEl = document.getElementById('esp-gps-coords');
-    if (coordsEl) coordsEl.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
   }
 
   // ─── Mostrar/ocultar mapa ─────────────────────

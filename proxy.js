@@ -9,7 +9,7 @@ const https = require('https');
 
 const PORT = 3002;
 const GEMINI_HOST = 'generativelanguage.googleapis.com';
-const GEMINI_PATH = '/v1beta/models/gemini-2.0-flash:generateContent';
+const GEMINI_PATH = '/v1beta/models/gemini-2.0-flash-lite:generateContent';
 
 const server = http.createServer((req, res) => {
   // CORS

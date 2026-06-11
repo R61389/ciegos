@@ -10,7 +10,19 @@ const AI = (() => {
 
   // ─── Configuración ────────────────────────────
   const GEMINI_KEY = () => localStorage.getItem('urban') || '';
-  const GEMINI_URL = () => `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY()}`;
+  const GEMINI_URL = () => {
+    const k = GEMINI_KEY();
+    if (k.startsWith('AQ.')) {
+      return 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+    }
+    return `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${k}`;
+  };
+  const GEMINI_HEADERS = () => {
+    const k = GEMINI_KEY();
+    const h = { 'Content-Type': 'application/json' };
+    if (k.startsWith('AQ.')) h['x-goog-api-key'] = k;
+    return h;
+  };
   const TIMEOUT_MS = 8000;   // 8s timeout por request
   const MAX_HISTORY = 20;    // máximo de mensajes en historial
 
@@ -92,7 +104,7 @@ REGLAS:
     try {
       const res = await fetch(GEMINI_URL(), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: GEMINI_HEADERS(),
         body: JSON.stringify({
           contents,
           generationConfig: {
@@ -300,7 +312,7 @@ REGLAS:
       try {
         const res = await fetch(GEMINI_URL(), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: GEMINI_HEADERS(),
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: { maxOutputTokens: 30, temperature: 0.2 }
@@ -342,7 +354,7 @@ REGLAS:
       try {
         const res = await fetch(GEMINI_URL(), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: GEMINI_HEADERS(),
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: { maxOutputTokens: 55, temperature: 0.65 }
